@@ -5,3 +5,8 @@ target/
 .DS_Store
 .idea/
 *.iml
+
+# Never commit credentials. The Neon connection string lives here locally and
+# is supplied to deployments as an environment variable instead.
+scripts/connection/
+*.env
