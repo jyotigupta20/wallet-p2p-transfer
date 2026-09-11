@@ -1,0 +1,40 @@
+# Render Blueprint. In the Render dashboard: New -> Blueprint -> pick this repo.
+#
+# region: singapore is load-bearing, not a preference. The database is Neon in
+# ap-southeast-1, and every statement in a transfer runs while row locks are
+# held - so round-trip latency between app and database multiplies directly
+# into lock hold time. Measured across a WAN a single transfer held its locks
+# for seconds and contention then blew through lock_timeout. Co-located, the
+# same work takes milliseconds.
+services:
+  - type: web
+    name: paytm-wallet
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/readiness
+    autoDeploy: true
+    envVars:
+      # Secrets: set these in the Render dashboard, never in this file.
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: ADMIN_TOKEN
+        generateValue: true
+      # New wallets open with Rs 10,000 so the burst script needs no funding
+      # step. Recorded as an OPENING ledger row, so conservation stays exact.
+      - key: OPENING_BALANCE_PAISE
+        value: "1000000"
+      # The free instance has 512MB and shares a CPU. Keep the pool modest: it
+      # is the concurrency bound, and a bigger pool would not add throughput
+      # because contended transfers serialise on row locks anyway.
+      - key: DB_POOL_SIZE
+        value: "10"
+      - key: TOMCAT_MAX_THREADS
+        value: "80"
+      - key: JAVA_TOOL_OPTIONS
+        value: "-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -XX:SharedArchiveFile=/app/app.jsa -Xshare:auto"

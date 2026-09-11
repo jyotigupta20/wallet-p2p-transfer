@@ -82,7 +82,7 @@ management:
   metrics:
     tags:
       application: paytm-wallet
-      instance: ${INSTANCE_ID:local}
+      instance: ${INSTANCE_ID:${RENDER_INSTANCE_ID:local}}
     distribution:
       # Both, deliberately:
       #  - percentiles-histogram exports le= buckets so Grafana can compute a
@@ -106,7 +106,7 @@ management:
         "[http.server.requests]": 10s
 
 app:
-  instance-id: ${INSTANCE_ID:local}
+  instance-id: ${INSTANCE_ID:${RENDER_INSTANCE_ID:local}}
   auth:
     # Demo posture: any previously-unseen bearer token provisions a user.
     # This keeps the burst script zero-setup and exercises race-free

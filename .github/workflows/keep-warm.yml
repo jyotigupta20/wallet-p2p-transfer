@@ -1,0 +1,28 @@
+name: keep-warm
+
+# The free tiers sleep: a Render free web service spins down after 15 minutes
+# idle, and a Neon free compute autosuspends after 5. A cold start would meet a
+# reviewer with a timeout instead of a service. One ping every 10 minutes keeps
+# both awake, because /health touches the database.
+#
+# This is a deliberate operating decision for a zero-rupee deployment, written
+# down rather than hidden. Set the LIVE_URL repository variable to enable it.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health
+        run: |
+          URL="${{ vars.LIVE_URL }}"
+          if [ -z "$URL" ]; then
+            echo "LIVE_URL repository variable is not set; nothing to keep warm."
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 "$URL/health")
+          echo "$URL/health -> $code"
+          test "$code" = "200"
