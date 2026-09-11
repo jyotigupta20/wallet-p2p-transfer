@@ -43,11 +43,15 @@ jobs:
           # Every endpoint and every documented status code, one request at a
           # time - including all the ways a request can be rejected.
           ./apitest.sh http://localhost:8080
+          ./apitest.sh http://localhost:8000   # and through the load balancer
 
           # Then the invariants under concurrency, sprayed across both
           # replicas: correctness must come from Postgres, not from one JVM
           # happening to serialise things in memory.
           ./burst.sh http://localhost:8080 http://localhost:8081 --transfers 400 --contended-wallets 3
+
+          # And that the invariants survive a replica being SIGKILLed mid-burst.
+          ./crashtest.sh
 
       - name: Show service logs on failure
         if: failure()

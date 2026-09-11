@@ -179,6 +179,11 @@ every line. Domain events: `wallet.created`, `wallet.get_or_create.existing`,
 `transfer.completed`, `transfer.declined`, `transfer.idempotent_replay`,
 `transfer.idempotency_key_conflict`, `deadlock_detected`, `invariant_violation`.
 
+The ring buffer is **per instance** - each replica serves its own last 2000
+lines, exactly as a platform's log viewer shows one machine at a time. Behind
+the compose load balancer, read a specific replica on :8080 / :8081, or match
+the `X-Instance-Id` header on the response you are tracing.
+
 Every free host puts its log viewer behind a login, so the service serves its
 own. Run this in one pane and `./burst.sh` in another:
 

@@ -260,14 +260,28 @@ def cross_cutting(base, token):
     import uuid
     trace = "trace-" + uuid.uuid4().hex[:12]
     t, wallet, _ = make_account(base, "trace")
-    request(base, "POST", "/transfers", token=t,
-            payload={"from": wallet, "to": UNKNOWN_UUID, "amount_paise": 1,
-                     "idempotency_key": "trace-" + trace},
-            headers={"X-Request-Id": trace})
-    logs = request(base, "GET", "/debug/logs?n=500")
-    REPORT.check(trace in logs.text,
+    traced = request(base, "POST", "/transfers", token=t,
+                     payload={"from": wallet, "to": UNKNOWN_UUID, "amount_paise": 1,
+                              "idempotency_key": "trace-" + trace},
+                     headers={"X-Request-Id": trace})
+    served_by = traced.header("X-Instance-Id")
+
+    # The log ring buffer is per-instance, so behind a load balancer the log
+    # read can land on a different replica than the one that served the traced
+    # request. Retry until we are reading the right instance's buffer rather
+    # than reporting a failure that is really just a routing coincidence.
+    found = False
+    for _ in range(12):
+        logs = request(base, "GET", "/debug/logs?n=500")
+        if logs.header("X-Instance-Id") == served_by:
+            found = trace in logs.text
+            break
+    else:
+        logs = request(base, "GET", "/debug/logs?n=500")
+        found = trace in logs.text
+    REPORT.check(found,
                  "the correlation id actually reaches the structured logs",
-                 "searched the last 500 log lines")
+                 f"searched the last 500 lines on instance {served_by}")
 
     section("Error format")
     err = request(base, "GET", f"/wallets/{UNKNOWN_UUID}", token=token)

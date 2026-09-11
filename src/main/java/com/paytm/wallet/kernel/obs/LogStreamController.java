@@ -1,5 +1,6 @@
 package com.paytm.wallet.kernel.obs;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -63,8 +64,19 @@ public class LogStreamController {
                 "live_stream_subscribers", subscribers.size());
     }
 
+    /**
+     * Response headers matter here. A reverse proxy - Render's, nginx, any CDN -
+     * will happily buffer a text/event-stream response, so the client sees
+     * nothing for minutes and the "watch the logs live" demo silently fails in
+     * production while working perfectly on localhost. X-Accel-Buffering: no is
+     * the nginx-family opt-out; no-cache and the disabled keep-alive close the
+     * remaining ways an intermediary can decide to hold on to the bytes.
+     */
     @GetMapping(value = "/debug/logs/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream() {
+    public SseEmitter stream(HttpServletResponse response) {
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        response.setHeader("Connection", "keep-alive");
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         Subscriber subscriber = new Subscriber(emitter);
 
