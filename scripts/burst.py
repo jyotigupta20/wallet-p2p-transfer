@@ -16,117 +16,19 @@ Exit code is 0 only if every assertion passes.
 
 import argparse
 import itertools
+import os
 import json
 import random
 import sys
-import threading
 import time
-import urllib.error
-import urllib.request
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 
 # ---------------------------------------------------------------- plumbing
 
-GREEN, RED, YELLOW, DIM, BOLD, RESET = (
-    "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[1m", "\033[0m"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from apiclient import (                                              # noqa: E402
+    BOLD, DIM, GREEN, RED, RESET, Report, STATS, in_parallel, request,
 )
-
-class Stats:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.status_counts = Counter()
-        self.server_errors = 0
-
-    def record(self, status):
-        with self.lock:
-            self.status_counts[status] += 1
-            if status >= 500:
-                self.server_errors += 1
-
-STATS = Stats()
-
-# Generous by default: when the app and its database are in different
-# regions a contended transfer can legitimately take seconds, and a
-# client-side timeout would be scored as a service failure it is not.
-TIMEOUT_SECONDS = 60
-
-
-class Response:
-    __slots__ = ("status", "body", "headers", "text")
-
-    def __init__(self, status, text, headers):
-        self.status = status
-        self.text = text
-        self.headers = {k.lower(): v for k, v in headers}
-        try:
-            self.body = json.loads(text) if text else {}
-        except json.JSONDecodeError:
-            self.body = {}
-
-    def __repr__(self):
-        return f"<{self.status} {self.text[:120]}>"
-
-
-def request(base, method, path, token=None, payload=None, timeout=None):
-    timeout = timeout or TIMEOUT_SECONDS
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(base.rstrip("/") + path, data=data, method=method)
-    req.add_header("Content-Type", "application/json")
-    if token:
-        req.add_header("Authorization", "Bearer " + token)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            resp = Response(r.status, r.read().decode(), r.getheaders())
-    except urllib.error.HTTPError as e:
-        resp = Response(e.code, e.read().decode(), e.headers.items())
-    except Exception as e:                                   # noqa: BLE001
-        # A transport failure is a failure of the service under test, and must
-        # not be silently swallowed into a passing run.
-        resp = Response(0, json.dumps({"transport_error": str(e)}), [])
-    STATS.record(resp.status)
-    return resp
-
-
-def in_parallel(count, fn):
-    """
-    Run fn(i) `count` times, all released from a common barrier.
-
-    The pool must have one thread per barrier party. Sizing the pool smaller
-    than the barrier deadlocks instantly: the first `workers` threads block
-    waiting for parties that can never be scheduled. So the pool is always
-    `count` wide, and callers bound concurrency by choosing `count`.
-    """
-    barrier = threading.Barrier(count)
-    results = [None] * count
-
-    def run(i):
-        barrier.wait()
-        results[i] = fn(i)
-
-    with ThreadPoolExecutor(max_workers=count) as pool:
-        list(pool.map(run, range(count)))
-    return results
-
-
-# ---------------------------------------------------------------- reporting
-
-class Report:
-    def __init__(self):
-        self.checks = []
-
-    def check(self, ok, label, detail=""):
-        self.checks.append((bool(ok), label, detail))
-        mark = f"{GREEN}PASS{RESET}" if ok else f"{RED}FAIL{RESET}"
-        line = f"  [{mark}] {label}"
-        if detail:
-            line += f"  {DIM}{detail}{RESET}"
-        print(line, flush=True)
-        return bool(ok)
-
-    @property
-    def failed(self):
-        return [c for c in self.checks if not c[0]]
 
 REPORT = Report()
 
@@ -419,16 +321,7 @@ def main():
           f"total_balance_paise={final['total_wallet_balance_paise']} "
           f"completed={final['transfers_completed']} declined={final['transfers_declined']}{RESET}")
 
-    failed = REPORT.failed
-    total = len(REPORT.checks)
-    print()
-    if failed:
-        print(f"{RED}{BOLD}FAILED{RESET}  {len(failed)} of {total} checks failed:")
-        for _, label, detail in failed:
-            print(f"  {RED}x{RESET} {label}  {DIM}{detail}{RESET}")
-        return 1
-    print(f"{GREEN}{BOLD}ALL {total} CHECKS PASSED{RESET}")
-    return 0
+    return REPORT.summary()
 
 
 if __name__ == "__main__":

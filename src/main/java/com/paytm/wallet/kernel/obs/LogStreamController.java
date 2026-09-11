@@ -74,6 +74,23 @@ public class LogStreamController {
 
         subscribers.add(subscriber);
         buffer.subscribe(subscriber.sink);
+
+        // Say hello straight away, for two reasons. A client otherwise sees
+        // nothing - not even response headers - until the service happens to
+        // log something, which looks indistinguishable from a hung connection.
+        // And replaying the recent tail means a viewer who connects mid-burst
+        // has context rather than joining blind.
+        try {
+            emitter.send(SseEmitter.event().name("connected").data(
+                    "{\"event\":\"connected\",\"buffered_lines\":"
+                            + buffer.totalWritten() + "}"));
+            for (String line : buffer.tail(20)) {
+                emitter.send(SseEmitter.event().data(line));
+            }
+        } catch (IOException | IllegalStateException e) {
+            remove(subscriber);
+            emitter.completeWithError(e);
+        }
         return emitter;
     }
 

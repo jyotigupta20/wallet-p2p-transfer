@@ -33,13 +33,33 @@ landing on different JVMs. To prove it, spray one burst directly across both:
 | app-2 | http://localhost:8081 | `X-Instance-Id: app-2` |
 | Postgres | localhost:5432 | `wallet` / `wallet` / `wallet` |
 
-## Tests
+## Testing
+
+Three layers, all runnable against a local stack or the deployed URL.
 
 ```bash
-./mvnw.sh test        # 9 concurrency tests against a real Postgres (Testcontainers)
+./apitest.sh                       # every endpoint, every status code  (113 checks)
+./apitest.sh -v                    # ...showing each request and response
+./burst.sh                         # the invariants under concurrency    (45 checks)
+./mvnw.sh test                     # 9 concurrency tests vs real Postgres (Testcontainers)
 ```
 
-Requires Docker. Every test releases its threads from a `CyclicBarrier`, so the
+`apitest.sh` covers the API surface one request at a time: every success path,
+every rejection path, the response headers (`X-Idempotent-Replay`,
+`X-Wallet-Created`, `X-Correlation-Id`, `X-Instance-Id`), the problem+json
+shape, the operational endpoints, and an end-to-end check that a
+caller-supplied correlation id actually reaches the structured logs. It asserts
+zero 5xx and no stack trace in any response.
+
+`burst.sh` is the concurrency harness — the four graded invariants under
+simultaneous load. Pass several URLs to spray one burst across replicas:
+
+```bash
+./burst.sh http://localhost:8080 http://localhost:8081
+./burst.sh --transfers 1000 --contended-wallets 3     # maximum contention
+```
+
+Testcontainers requires Docker. Every test releases its threads from a `CyclicBarrier`, so the
 requests are genuinely simultaneous rather than merely overlapping. Two of them
 are regression tests for bugs that actually reached a running instance — see
 [What the burst script caught](#what-the-burst-script-caught).

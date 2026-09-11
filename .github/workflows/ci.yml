@@ -30,7 +30,7 @@ jobs:
           echo "container uid: $uid"
           test "$uid" = "10001"
 
-      - name: End-to-end burst against the full compose stack
+      - name: API coverage and concurrency burst against the full compose stack
         run: |
           docker compose up -d --build
           for i in $(seq 1 90); do
@@ -40,8 +40,13 @@ jobs:
             fi
             sleep 1
           done
-          # Sprayed across both replicas: correctness must come from Postgres,
-          # not from one JVM happening to serialise things in memory.
+          # Every endpoint and every documented status code, one request at a
+          # time - including all the ways a request can be rejected.
+          ./apitest.sh http://localhost:8080
+
+          # Then the invariants under concurrency, sprayed across both
+          # replicas: correctness must come from Postgres, not from one JVM
+          # happening to serialise things in memory.
           ./burst.sh http://localhost:8080 http://localhost:8081 --transfers 400 --contended-wallets 3
 
       - name: Show service logs on failure

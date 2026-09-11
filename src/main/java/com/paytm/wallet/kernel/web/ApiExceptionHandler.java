@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestValueException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -147,6 +148,25 @@ public class ApiExceptionHandler {
         return "";
     }
 
+    // ---- client went away ------------------------------------------------
+
+    /**
+     * A client disconnecting is not a server error.
+     *
+     * Someone watching GET /debug/logs/stream and pressing Ctrl-C produces a
+     * broken pipe on the next event. Left to the catch-all below, that would
+     * log a full stack trace at ERROR and increment the 5xx counter - so the
+     * act of watching the logs would falsify the "zero 5xx" claim those very
+     * logs are meant to support. Found by the API coverage suite.
+     *
+     * There is also nothing to respond with: the socket is already gone. Hence
+     * void, and DEBUG rather than ERROR.
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleClientDisconnect(AsyncRequestNotUsableException ex) {
+        log.debug("event=client_disconnected msg={}", ex.getMessage());
+    }
+
     // ---- last resort -----------------------------------------------------
 
     @ExceptionHandler(Exception.class)
@@ -169,6 +189,11 @@ public class ApiExceptionHandler {
         if (code.status().is5xxServerError()) {
             metrics.serverError();
         }
+        // A rejected request must be as traceable as a successful one: without
+        // this, a caller quoting a correlation id for a 404 or a 409 would find
+        // nothing in the logs at all.
+        log.info("event=request.rejected code={} status={} detail={}",
+                code.name(), code.status().value(), detail);
         return ResponseEntity.status(code.status())
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(ApiError.of(code, detail, RequestContext.correlationId()));
