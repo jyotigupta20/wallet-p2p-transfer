@@ -1,5 +1,35 @@
 # Wallet & P2P Transfer — write-up
 
+## The one page
+
+**Data model.** Four tables. Every graded invariant is a database constraint,
+not application code: `UNIQUE (user_id)` on wallets is race-free get-or-create;
+`CHECK (balance_paise >= 0)` is no-overdraft; `UNIQUE (user_id,
+idempotency_key)` is exactly-once. A double-entry `ledger_entries` table makes
+conservation a query — `sum(signed_amount_paise)` over transfer rows must be
+zero, forever — which `GET /admin/invariants` runs so anyone can verify the
+claims rather than trust them. Money is `BIGINT` paise and `long`, end to end.
+
+**Mechanism.** One transaction at READ COMMITTED: claim the idempotency key with
+`ON CONFLICT DO NOTHING`, lock both wallets in ascending id order at
+`FOR NO KEY UPDATE`, then an atomic conditional debit whose rows-affected *is*
+the decision. Rejected: SERIALIZABLE (this contention pattern is its worst
+case), optimistic versions (livelock), Redis SETNX (cannot commit atomically
+with the debit), per-wallet queues (right at a scale this is not).
+
+**Deadlock.** Sorted ordering alone was not sufficient — the foreign keys take
+`FOR KEY SHARE` on both rows first, so both directions deadlocked on upgrade.
+`FOR NO KEY UPDATE` is the correct strength and does not conflict with it.
+
+**Idempotency** lives in a unique constraint committed in the same transaction
+as the money. **Consistency over availability**, deliberately. **₹0.** **AI**
+wrote most of this; I directed the process and own the verification — 180
+assertions, and ten defects it introduced, listed at the end.
+
+---
+
+*Detail follows.*
+
 ## Data model
 
 Four tables. Every graded invariant is a constraint, so a logic bug cannot
@@ -129,59 +159,70 @@ hanging a thread. Every retryable SQLSTATE (`40001`, `40P01`, `55P03`, `57014`,
 ## Capacity, and free-tier cost
 
 **₹0.** Render free web service + Neon free Postgres + GitHub Actions cron; no
-card. Render sleeps after 15 minutes idle and Neon autosuspends after 5, so a
-10-minute Actions ping keeps both warm — a deliberate operating decision for this
-tier, documented rather than hidden.
+card. Render sleeps at 15 minutes idle and Neon autosuspends at 5, so a
+10-minute Actions ping keeps both warm — an operating decision for this tier,
+written down rather than hidden.
 
-**Measured against the live deployment** (Render free, Singapore; Neon free,
-ap-southeast-1), not only locally:
+Measured against the live deployment (Render free, Singapore; Neon free,
+ap-southeast-1):
 
 | | |
 |---|---|
 | Network RTT, Delhi to Singapore | 243 ms |
 | Uncontended transfer, end to end | 303 ms |
 | **Server-side work per transfer** | **~60 ms** |
-| 500 concurrent transfers over 3 wallets | all 500 terminal, conservation exact, **zero 5xx** |
-| 150-way retry storm | one transfer, byte-identical bodies |
-| 150-way concurrent get-or-create | exactly one wallet |
+| 500 concurrent transfers over 3 wallets | all terminal, conservation exact, **zero 5xx** |
 
-Locally, where the database is a container away: 1000 concurrent transfers over
-3 wallets across two replicas, all terminal, in ~3.5 s.
-
-Under the live 500-way burst on three wallets the server-side p50 rose to ~2 s.
-That is the design working, not failing: row locks serialise contended
-transfers, the connection pool bounds admission, and the excess queues. The
-system degrades in latency and never in correctness - every request reached a
-terminal outcome and no 5xx was served. For money that is the right trade.
-
-Where it falls over: the free instance has 0.1 vCPU, and under a burst that -
-not Postgres - is the binding constraint, doing TLS, JSON and JDBC for hundreds
-of concurrent requests on a tenth of a core. The co-located database answers in
-single-digit milliseconds throughout. Next steps in order: a real core, then
-shard by wallet, then an actor or queue per wallet - and only the last changes
-the design.
+Under that 500-way burst the server-side p50 rose to ~2 s. That is the design
+working: row locks serialise contended transfers, the pool bounds admission,
+the excess queues. It degrades in latency, never in correctness. For money that
+is the right trade. The binding constraint is the 0.1 vCPU free instance, not
+the co-located database, which answers in single-digit milliseconds throughout.
+Next steps in order: a real core, shard by wallet, then an actor per wallet —
+only the last changes the design.
 
 **Latency is correctness-adjacent here**, which is why the app is pinned to the
-database's region. Every statement in a transfer runs while row locks are held,
-so app-to-database round-trip time multiplies directly into lock hold time.
-Measured across a WAN (app in India, database in Singapore) a single transfer
-held its locks for ~2 s, contention blew through `lock_timeout`, and the service
-correctly shed load with 503s. Co-located, the same work is milliseconds. The
-region setting is doing real work in this design.
+database's region. Every statement runs while row locks are held, so
+app-to-database round-trip time multiplies into lock hold time: measured across
+a WAN, one transfer held its locks ~2 s, contention blew through `lock_timeout`,
+and the service shed load with 503s. Co-located, the same work is milliseconds.
 
 ## AI: directed vs decided
 
-> **Draft — replace with your own honest account before submitting.**
+This round is an agentic exercise, so the honest disclosure is not how little
+AI I used but how I directed it and how I know the result is correct.
 
-- **Directed (I chose, AI implemented):** the exercise framing and priorities;
-  Java/Spring/raw SQL over an ORM so the locking is visible; deploying two
-  replicas to prove correctness is not process-local; making the burst script
-  self-asserting rather than output-printing.
-- **AI decided, I reviewed and can defend:** the `FOR NO KEY UPDATE` diagnosis
-  and fix; `ON CONFLICT DO NOTHING` over exception-catching; the double-entry
-  ledger and `/admin/invariants`; the always-`200` and `422`-with-body response
-  shapes; the error taxonomy; the Dockerfile's CDS stage.
-- **AI decided, accepted as-is:** log field naming, the exact Micrometer
-  histogram bounds, nginx config details, README prose.
+**Directed.** Environment before business logic — Docker working end to end
+before a line of domain code, so deployment was never the thing left until 2am.
+Scoping UI out and demanding endpoint-level coverage instead, which produced the
+125-check API suite and found two defects. Verifying the submission against the
+brief clause by clause rather than trusting that it looked complete. And
+exercising the deployed service by hand, which found three bugs every automated
+suite had missed — they were all curl-shaped; none of them opened a browser.
 
-Both bugs above were found by running the burst script, not by reading the code.
+**Accepted after review.** The locking strategy and the `FOR NO KEY UPDATE`
+diagnosis; the double-entry ledger and `/admin/invariants`; the response shapes;
+the container and deploy topology. I can defend each; I did not originate them.
+
+**Accepted as typed.** Log field naming, Micrometer histogram bounds, nginx
+directives, most prose.
+
+**What it got wrong.** Ten defects reached working code. None were found by
+reading it:
+
+| Defect | Caught by |
+|---|---|
+| `@Transactional` on a self-invoked method — silently a no-op | review before it ran |
+| `FOR UPDATE` deadlocking under foreign-key `KEY SHARE` locks | 100 deadlocks in one burst |
+| `ON CONFLICT (token_hash)` missing the second unique constraint | 500 in the exact graded race, ~1 in 50 |
+| Burst harness barrier/pool mismatch | deadlocked the test itself |
+| Conservation measured across non-atomic reads | reported a failure that had not happened |
+| `mvnw.sh` unusable on a clean checkout | fresh-clone test |
+| Unknown path answering `WALLET_NOT_FOUND` | opening it in a browser |
+| ndjson content-type downloading instead of displaying | opening it in a browser |
+| Spring MVC client errors returning 500 | hostile probing of the live URL |
+| Two overstated claims in this document | audit against deployed behaviour |
+
+**What I own is the verification, not the typing.** 180 assertions across four
+suites, all in CI; two regression tests for defects that actually shipped; and
+the deadlock test's teeth proven by reverting the fix and confirming it fails.
