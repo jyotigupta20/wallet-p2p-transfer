@@ -122,13 +122,41 @@ card. Render sleeps after 15 minutes idle and Neon autosuspends after 5, so a
 10-minute Actions ping keeps both warm — a deliberate operating decision for this
 tier, documented rather than hidden.
 
-Measured locally: **1000 concurrent transfers over 3 wallets, across two
-containerised replicas, all 1000 terminal, zero 5xx, ~3.5 s** (≈ 285 transfers/s
-under maximum contention; p99 ≈ 194 ms at 200-way concurrency). It falls over
-when the single primary saturates or connections exhaust — the next steps would
-be shard-by-wallet and an actor/queue per wallet, in that order. Beyond free
-tier, a Render starter instance plus a small managed Postgres is roughly
-₹1,500–2,500/month.
+**Measured against the live deployment** (Render free, Singapore; Neon free,
+ap-southeast-1), not only locally:
+
+| | |
+|---|---|
+| Network RTT, Delhi to Singapore | 243 ms |
+| Uncontended transfer, end to end | 303 ms |
+| **Server-side work per transfer** | **~60 ms** |
+| 500 concurrent transfers over 3 wallets | all 500 terminal, conservation exact, **zero 5xx** |
+| 150-way retry storm | one transfer, byte-identical bodies |
+| 150-way concurrent get-or-create | exactly one wallet |
+
+Locally, where the database is a container away: 1000 concurrent transfers over
+3 wallets across two replicas, all terminal, in ~3.5 s.
+
+Under the live 500-way burst on three wallets the server-side p50 rose to ~2 s.
+That is the design working, not failing: row locks serialise contended
+transfers, the connection pool bounds admission, and the excess queues. The
+system degrades in latency and never in correctness - every request reached a
+terminal outcome and no 5xx was served. For money that is the right trade.
+
+Where it falls over: the free instance has 0.1 vCPU, and under a burst that -
+not Postgres - is the binding constraint, doing TLS, JSON and JDBC for hundreds
+of concurrent requests on a tenth of a core. The co-located database answers in
+single-digit milliseconds throughout. Next steps in order: a real core, then
+shard by wallet, then an actor or queue per wallet - and only the last changes
+the design.
+
+**Latency is correctness-adjacent here**, which is why the app is pinned to the
+database's region. Every statement in a transfer runs while row locks are held,
+so app-to-database round-trip time multiplies directly into lock hold time.
+Measured across a WAN (app in India, database in Singapore) a single transfer
+held its locks for ~2 s, contention blew through `lock_timeout`, and the service
+correctly shed load with 503s. Co-located, the same work is milliseconds. The
+region setting is doing real work in this design.
 
 ## AI: directed vs decided
 
