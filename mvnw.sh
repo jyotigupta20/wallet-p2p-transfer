@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
-# Self-contained Maven wrapper: uses the JDK 21 + Maven vendored under ../LLD/.tools
-# so nothing needs to be installed system-wide. See docs/WRITEUP.md.
+#
+# Convenience wrapper. Prefers a vendored toolchain if one happens to be
+# present, otherwise falls back to the standard Maven Wrapper (./mvnw), which
+# downloads Maven itself and needs nothing but a JDK on PATH.
+#
+# A clean checkout has no vendored toolchain, so ./mvnw is the path that must
+# always work - use it directly if you prefer:  ./mvnw test
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOLS="$HERE/../LLD/.tools"
-export JAVA_HOME="$TOOLS/jdk-21.0.12+8/Contents/Home"
-export PATH="$JAVA_HOME/bin:$TOOLS/apache-maven-3.9.9/bin:$PATH"
-if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
-  echo "ERROR: JDK not found at $JAVA_HOME" >&2; exit 1
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+VENDORED="$HERE/../LLD/.tools"
+
+if [[ -x "$VENDORED/jdk-21.0.12+8/Contents/Home/bin/java" ]]; then
+  export JAVA_HOME="$VENDORED/jdk-21.0.12+8/Contents/Home"
+  export PATH="$JAVA_HOME/bin:$PATH"
 fi
-exec "$TOOLS/apache-maven-3.9.9/bin/mvn" "$@"
+
+if ! command -v java >/dev/null 2>&1 && [[ -z "${JAVA_HOME:-}" ]]; then
+  cat >&2 <<'MSG'
+No JDK found. Install JDK 21 (e.g. https://adoptium.net) and set JAVA_HOME,
+or skip the host build entirely and use the container:
+
+    docker compose up --build
+MSG
+  exit 1
+fi
+
+exec "$HERE/mvnw" "$@"

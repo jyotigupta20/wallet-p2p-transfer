@@ -42,7 +42,7 @@ Three layers, all runnable against a local stack or the deployed URL.
 ./apitest.sh                       # every endpoint, every status code  (113 checks)
 ./apitest.sh -v                    # ...showing each request and response
 ./burst.sh                         # the invariants under concurrency    (45 checks)
-./mvnw.sh test                     # 9 concurrency tests vs real Postgres (Testcontainers)
+./mvnw test                        # 9 concurrency tests vs real Postgres (Testcontainers)
 ```
 
 `apitest.sh` covers the API surface one request at a time: every success path,
@@ -79,8 +79,10 @@ requests are genuinely simultaneous rather than merely overlapping. Two of them
 are regression tests for bugs that actually reached a running instance — see
 [What the burst script caught](#what-the-burst-script-caught).
 
-No JDK or Maven is needed on the host: `./mvnw.sh` uses the vendored toolchain
-under `../LLD/.tools`.
+`./mvnw` is the standard Maven Wrapper — it downloads Maven itself, so a clean
+checkout needs only a JDK 21 on `PATH`. If you would rather install nothing at
+all, `docker compose up --build` builds inside the container and needs no host
+JDK whatsoever.
 
 ---
 
