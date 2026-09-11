@@ -34,9 +34,9 @@ public class UserRepository {
      * Postgres happens to check the external_id index first it raises a raw
      * 23505, which aborts the transaction and surfaces as a 500.
      *
-     * That is not hypothetical - it was a real 500 in exactly the scenario
-     * this exercise grades, 50 simultaneous POST /wallets for a brand-new
-     * user, and burst.sh caught it. Untargeted DO NOTHING means "if any unique
+     * That is not hypothetical - it was a real 500 under N simultaneous
+     * POST /wallets for a brand-new user, and burst.sh caught it. It appeared
+     * roughly once in fifty requests. Untargeted DO NOTHING means "if any unique
      * constraint says this row already exists, leave it alone", which is
      * precisely the intent. DO NOTHING never suppresses anything but
      * unique/exclusion violations, so it hides no other class of bug.

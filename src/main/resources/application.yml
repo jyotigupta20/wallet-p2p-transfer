@@ -29,9 +29,9 @@ spring:
       # See docs/WRITEUP.md "consistency vs availability".
       maximum-pool-size: ${DB_POOL_SIZE:20}
       minimum-idle: 2
-      # Patient, not fail-fast. Under the graded contention burst the right
+      # Patient, not fail-fast. Under a contention burst the right
       # outcome is that every transfer eventually completes or is cleanly
-      # declined - not that a third of them get a 503 telling the grader to
+      # declined - not that a third of them get a 503 telling the caller to
       # retry. Transactions here are single-digit milliseconds, so a queue of
       # a few hundred drains well inside this budget.
       connection-timeout: 30000

@@ -5,10 +5,10 @@ import org.springframework.http.HttpStatus;
 /**
  * Every failure the API can produce, each mapped to a specific 4xx/5xx.
  *
- * The exercise bank is explicit that a malformed or rejected request must yield
- * "a specific 4xx with a clear message - never a 500 or a stack trace", and that
- * 5xx must stay at zero under the bursts. Enumerating the failures here (rather
- * than throwing ad-hoc exceptions) is what makes that auditable.
+ * A rejected request should get a specific 4xx with a clear, machine-readable
+ * reason - never a 500, and never a stack trace on the wire. Enumerating every
+ * failure here, rather than throwing ad-hoc exceptions from wherever they
+ * arise, is what makes that property auditable instead of aspirational.
  */
 public enum ErrorCode {
 

@@ -4,9 +4,10 @@ API coverage suite: every endpoint, every documented status code.
 
 Where burst.sh proves the invariants hold under concurrency, this proves the
 API surface behaves correctly one request at a time - including every way a
-request can be rejected. The brief's sibling exercises are explicit that a bad
-request must produce "a specific 4xx with a clear message - never a 500 or a
-stack trace", so the rejection paths are tested as carefully as the happy ones.
+request can be rejected. A money API is judged as much by how cleanly it says
+no as by how it says yes, so the rejection paths are tested as carefully as the
+happy ones - every one must be a specific 4xx, never a 500, never a stack
+trace.
 
   ./apitest.sh                         # local stack
   ./apitest.sh https://your.url        # deployed

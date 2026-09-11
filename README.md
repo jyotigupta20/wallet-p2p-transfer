@@ -209,7 +209,7 @@ than any paragraph.
 ## What the burst script caught
 
 Neither of these is reachable without real concurrency, and **both would have
-fired during live grading**.
+fired the first time anyone ran a burst against the deployed URL**.
 
 **1. A deadlock that sorted lock ordering could not prevent.** `transfers` has
 foreign keys to `wallets`, so inserting a transfer takes a `FOR KEY SHARE` lock
