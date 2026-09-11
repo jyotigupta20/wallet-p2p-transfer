@@ -7,11 +7,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.transaction.TransactionException;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.HttpMediaTypeNotAcceptableException;
-import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestValueException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -76,27 +77,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleNoResource(NoResourceFoundException ex) {
         return respond(ErrorCode.ENDPOINT_NOT_FOUND, ErrorCode.ENDPOINT_NOT_FOUND.defaultDetail());
-    }
-
-    /**
-     * An Accept header this endpoint cannot satisfy is a client error, not a
-     * fault. Unhandled it fell through to the catch-all, which returned 500
-     * and incremented the 5xx counter - so a single picky client could
-     * falsify the "no 5xx" property. Real browsers never hit this, because
-     * they always append a wildcard fallback to Accept - which is why it
-     * went unnoticed until a test sent a bare Accept: text/html.
-     */
-    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
-    public ResponseEntity<ApiError> handleNotAcceptable(HttpMediaTypeNotAcceptableException ex) {
-        return ResponseEntity.status(ErrorCode.NOT_ACCEPTABLE.status())
-                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
-                .body(ApiError.of(ErrorCode.NOT_ACCEPTABLE,
-                        ErrorCode.NOT_ACCEPTABLE.defaultDetail(), RequestContext.correlationId()));
-    }
-
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ApiError> handleMethod(HttpRequestMethodNotSupportedException ex) {
-        return respond(ErrorCode.INVALID_REQUEST, "Method not supported for this endpoint");
     }
 
     // ---- contention ------------------------------------------------------
@@ -193,6 +173,37 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex, HttpServletRequest request) {
+        /*
+         * Spring MVC's own client-error exceptions all implement ErrorResponse
+         * and already carry the right status: 415 for an unsupported request
+         * Content-Type, 406 for an Accept header we cannot satisfy, 405 for a
+         * wrong method, and so on. Falling through to this catch-all turned
+         * every one of them into a 500 that also incremented the server-error
+         * counter - so 'POST /transfers' with 'Content-Type: text/plain'
+         * reported a server fault for what is purely a malformed request.
+         *
+         * Honouring the status the exception already knows fixes the whole
+         * family at once, instead of adding a handler each time another one
+         * surfaces. Only genuinely unrecognised failures reach the 500 below.
+         */
+        if (ex instanceof ErrorResponse errorResponse) {
+            HttpStatusCode status = errorResponse.getStatusCode();
+            if (status.is4xxClientError()) {
+                String code = HttpStatus.valueOf(status.value()).name();
+                log.info("event=request.rejected code={} status={} path={}",
+                        code, status.value(), request.getRequestURI());
+                return ResponseEntity.status(status)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body(new ApiError(
+                                "https://paytm-wallet.invalid/errors/" + code.toLowerCase(),
+                                HttpStatus.valueOf(status.value()).getReasonPhrase(),
+                                status.value(),
+                                ex.getMessage(),
+                                code,
+                                RequestContext.correlationId()));
+            }
+        }
+
         metrics.serverError();
         // Full detail to the logs (which carry the correlation id), never to the wire.
         log.error("event=unhandled_exception method={} path={} class={}",

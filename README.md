@@ -39,7 +39,7 @@ landing on different JVMs. To prove it, spray one burst directly across both:
 Three layers, all runnable against a local stack or the deployed URL.
 
 ```bash
-./apitest.sh                       # every endpoint, every status code  (121 checks)
+./apitest.sh                       # every endpoint, every status code  (125 checks)
 ./apitest.sh -v                    # ...showing each request and response
 ./burst.sh                         # the invariants under concurrency    (45 checks)
 ./mvnw test                        # 9 concurrency tests vs real Postgres (Testcontainers)

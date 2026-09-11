@@ -190,7 +190,7 @@ def transfers(base):
     return alice_token
 
 
-def operational(base):
+def operational(base, auth_token):
     section("Operational endpoints")
     for path in ["/health", "/health/liveness", "/health/readiness"]:
         r = call(base, "GET", path, 200, "probe")
@@ -254,6 +254,22 @@ def operational(base):
 
     # No real browser sends a bare "Accept: text/html" with no */* fallback,
     # but a picky client can - and that must not be a 5xx.
+    # Spring MVC's own client errors must keep their own status rather than
+    # collapsing into a 500. Each of these was a 500 once.
+    for label, kw, expect in [
+        ("unsupported request Content-Type",
+         dict(method="POST", path="/transfers", raw_body="x", token=auth_token,
+              headers={"Content-Type": "text/plain"}), 415),
+        ("wrong method on a real route",
+         dict(method="DELETE", path="/wallets"), 405),
+    ]:
+        kw = dict(kw)
+        m, pth = kw.pop("method"), kw.pop("path")
+        r = request(base, m, pth, **kw)
+        show(m, pth, r)
+        REPORT.check(r.status == expect, f"{m} {pth} -> {expect}  ({label})", f"got {r.status}")
+        REPORT.check(r.status < 500, f"    ...and is not a server error")
+
     picky = request(base, "GET", "/admin/invariants", accept="text/html")
     show("GET", "/admin/invariants", picky)
     REPORT.check(picky.status == 406,
@@ -349,7 +365,7 @@ def main():
 
     wallets(base)
     token = transfers(base)
-    operational(base)
+    operational(base, token)
     cross_cutting(base, token)
 
     print(f"\n{DIM}  HTTP status distribution: "
