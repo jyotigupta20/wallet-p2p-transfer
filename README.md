@@ -51,6 +51,20 @@ shape, the operational endpoints, and an end-to-end check that a
 caller-supplied correlation id actually reaches the structured logs. It asserts
 zero 5xx and no stack trace in any response.
 
+For driving the API by hand — exploring, or demoing live — `api.sh` is a thin
+curl wrapper that prints the status, the headers that matter, and a formatted
+body:
+
+```bash
+export BASE=http://localhost:8000
+./api.sh demo                    # a scripted tour of every endpoint
+./api.sh wallet alice
+./api.sh transfer alice <from> <to> 50000 key-1
+./api.sh invariants
+./api.sh watch                   # live log stream
+./api.sh metrics                 # just the wallet_* series
+```
+
 `burst.sh` is the concurrency harness — the four graded invariants under
 simultaneous load. Pass several URLs to spray one burst across replicas:
 
