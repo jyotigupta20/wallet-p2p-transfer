@@ -252,6 +252,20 @@ def operational(base):
     REPORT.check("api" in root.body and "verify_it_yourself" in root.body,
                  "    ...the index points at the endpoints that verify the service")
 
+    # No real browser sends a bare "Accept: text/html" with no */* fallback,
+    # but a picky client can - and that must not be a 5xx.
+    picky = request(base, "GET", "/admin/invariants", accept="text/html")
+    show("GET", "/admin/invariants", picky)
+    REPORT.check(picky.status == 406,
+                 "GET /admin/invariants with an unsatisfiable Accept -> 406, not 500",
+                 f"got {picky.status}")
+
+    browserish = request(base, "GET", "/",
+                         accept="text/html,application/xhtml+xml,*/*;q=0.8")
+    REPORT.check(browserish.status == 200,
+                 "    ...and a real browser Accept still gets the index",
+                 f"got {browserish.status}")
+
     missing = call(base, "GET", "/nope", 404, "unknown path")
     REPORT.check(missing.body.get("code") == "ENDPOINT_NOT_FOUND",
                  "    ...an unknown path is ENDPOINT_NOT_FOUND, not WALLET_NOT_FOUND",

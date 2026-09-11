@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestValueException;
@@ -75,6 +76,22 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleNoResource(NoResourceFoundException ex) {
         return respond(ErrorCode.ENDPOINT_NOT_FOUND, ErrorCode.ENDPOINT_NOT_FOUND.defaultDetail());
+    }
+
+    /**
+     * An Accept header this endpoint cannot satisfy is a client error, not a
+     * fault. Unhandled it fell through to the catch-all, which returned 500
+     * and incremented the 5xx counter - so a single picky client could
+     * falsify the "no 5xx" property. Real browsers never hit this, because
+     * they always append a wildcard fallback to Accept - which is why it
+     * went unnoticed until a test sent a bare Accept: text/html.
+     */
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ApiError> handleNotAcceptable(HttpMediaTypeNotAcceptableException ex) {
+        return ResponseEntity.status(ErrorCode.NOT_ACCEPTABLE.status())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(ApiError.of(ErrorCode.NOT_ACCEPTABLE,
+                        ErrorCode.NOT_ACCEPTABLE.defaultDetail(), RequestContext.correlationId()));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

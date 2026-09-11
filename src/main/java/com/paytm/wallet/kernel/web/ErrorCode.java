@@ -20,6 +20,9 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "A valid bearer token is required"),
     FORBIDDEN(HttpStatus.FORBIDDEN, "The caller does not own the source wallet"),
 
+    NOT_ACCEPTABLE(HttpStatus.NOT_ACCEPTABLE,
+            "This endpoint produces application/json; the Accept header asks for something else"),
+
     ENDPOINT_NOT_FOUND(HttpStatus.NOT_FOUND, "No endpoint at this path; see GET / for the API index"),
     WALLET_NOT_FOUND(HttpStatus.NOT_FOUND, "No such wallet"),
     TRANSFER_NOT_FOUND(HttpStatus.NOT_FOUND, "No such transfer"),
