@@ -151,6 +151,44 @@ class InvariantConcurrencyTest {
         assertThat(balanceOf(alice)).as("a conflicting replay must not debit").isEqualTo(afterFirst);
     }
 
+    /**
+     * The idempotency key is scoped to the caller, not global.
+     *
+     * If it were global, one client's choice of key would silently suppress a
+     * different client's transfer - the second caller would get back someone
+     * else's transfer as a "replay", having moved no money of their own. That
+     * is a correctness bug that looks like idempotency working.
+     */
+    @Test
+    void theSameKeyFromTwoDifferentUsersIsTwoDifferentTransfers() {
+        var alice = newAccount();
+        var bob = newAccount();
+        var carol = newAccount();
+        String sharedKey = "same-key-different-callers";
+
+        ResponseEntity<Map> first = post("/transfers", alice.token, Map.of(
+                "from", alice.wallet, "to", carol.wallet,
+                "amount_paise", 1_000, "idempotency_key", sharedKey));
+        ResponseEntity<Map> second = post("/transfers", bob.token, Map.of(
+                "from", bob.wallet, "to", carol.wallet,
+                "amount_paise", 2_000, "idempotency_key", sharedKey));
+
+        assertThat(first.getStatusCode().value()).isEqualTo(200);
+        assertThat(second.getStatusCode().value())
+                .as("the second caller must not be blocked by the first caller's key")
+                .isEqualTo(200);
+        assertThat(second.getBody().get("transfer_id"))
+                .as("two callers, two transfers")
+                .isNotEqualTo(first.getBody().get("transfer_id"));
+
+        assertThat(balanceOf(alice)).isEqualTo(OPENING - 1_000);
+        assertThat(balanceOf(bob)).isEqualTo(OPENING - 2_000);
+        assertThat(balanceOf(carol))
+                .as("both transfers landed")
+                .isEqualTo(OPENING + 3_000);
+        assertInvariantsHold();
+    }
+
     // ------------------------------------------------------------------
     // INVARIANTS 1 and 2 - conservation and no overdraft
     // ------------------------------------------------------------------
@@ -317,6 +355,8 @@ class InvariantConcurrencyTest {
         assertThat(inv.transferLedgerSumPaise()).as("double-entry ledger sums to zero").isZero();
         assertThat(inv.walletsDisagreeingWithLedger())
                 .as("every balance reconciles against its ledger").isZero();
+        assertThat(inv.transfersPending())
+                .as("no transfer left claimed but unfinalised").isZero();
         assertThat(inv.holds()).as("server-side invariant check").isTrue();
     }
 

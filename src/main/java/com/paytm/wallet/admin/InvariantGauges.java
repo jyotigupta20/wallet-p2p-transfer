@@ -52,6 +52,9 @@ public class InvariantGauges {
         Gauge.builder("wallet_ledger_mismatch_count", this, g -> g.snapshot().walletsDisagreeingWithLedger())
                 .description("Wallets whose balance disagrees with their ledger. Must be zero.")
                 .register(registry);
+        Gauge.builder("wallet_stuck_transfers", this, g -> g.snapshot().transfersPending())
+                .description("Transfers claimed but never finalised. Must be zero.")
+                .register(registry);
         Gauge.builder("wallet_invariants_hold", this, g -> g.snapshot().holds() ? 1 : 0)
                 .description("1 when every graded invariant currently holds, 0 otherwise.")
                 .register(registry);
@@ -79,7 +82,7 @@ public class InvariantGauges {
             // A scrape must never fail because the database hiccuped.
             log.warn("event=invariant_snapshot_failed msg={}", e.getMessage());
             return current != null ? current.value()
-                    : Invariants.of(0, 0, 0, 0, 0, 0, 0, 0);
+                    : Invariants.of(0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 }

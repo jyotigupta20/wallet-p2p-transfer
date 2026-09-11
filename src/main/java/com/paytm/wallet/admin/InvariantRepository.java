@@ -41,7 +41,8 @@ public class InvariantRepository {
                        HAVING w.balance_paise <> coalesce(sum(l.signed_amount_paise), 0)
                    ) mismatched)                                         AS disagreeing,
                   (SELECT count(*) FROM transfers WHERE status = 'COMPLETED') AS completed,
-                  (SELECT count(*) FROM transfers WHERE status = 'DECLINED')  AS declined
+                  (SELECT count(*) FROM transfers WHERE status = 'DECLINED')  AS declined,
+                  (SELECT count(*) FROM transfers WHERE status = 'PENDING')   AS pending
                 """)
                 .query((rs, n) -> Invariants.of(
                         rs.getLong("wallet_count"),
@@ -51,7 +52,8 @@ public class InvariantRepository {
                         rs.getLong("negative_balances"),
                         rs.getLong("disagreeing"),
                         rs.getLong("completed"),
-                        rs.getLong("declined")))
+                        rs.getLong("declined"),
+                        rs.getLong("pending")))
                 .single();
     }
 }

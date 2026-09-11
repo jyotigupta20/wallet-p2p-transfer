@@ -25,8 +25,11 @@ transfer writes exactly two rows summing to zero, so
 every wallet balance must equal the sum of its own entries. Money enters the
 system in exactly one place — the `OPENING` row written when a wallet is created
 — so conservation is stated as *money in the system == money ever issued*, which
-stays exact even when new wallets appear mid-burst. `GET /admin/invariants` runs
-all of it in one round trip: anyone can verify the claims rather than trust them.
+stays exact even when new wallets appear mid-burst. `GET /admin/invariants` runs all of it in one round trip - plus a count of
+transfers stuck in `PENDING`, which should be structurally impossible (the
+state exists only inside the uncommitted transaction) and is asserted precisely
+because a broken assumption that stays silent is the dangerous kind. Anyone can
+verify the claims rather than trust them.
 
 `amount_paise CHECK (> 0)` is load-bearing. A negative amount makes the
 conditional debit's `balance >= amount` guard vacuous and lets a caller pull

@@ -314,6 +314,9 @@ def main():
     REPORT.check(final["holds"], "all invariants hold on the server after every burst")
     REPORT.check(final["negative_balance_count"] == 0, "no wallet is negative")
     REPORT.check(final["transfer_ledger_sum_paise"] == 0, "ledger still sums to zero")
+    REPORT.check(final.get("transfers_pending") == 0,
+                 "no transfer left claimed but unfinalised",
+                 f"pending = {final.get('transfers_pending')}")
 
     print(f"\n{DIM}  HTTP status distribution: "
           f"{dict(sorted(STATS.status_counts.items()))}{RESET}")

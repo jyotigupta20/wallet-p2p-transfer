@@ -60,6 +60,11 @@ def call(base, method, path, expect, label, token=None, payload=None, **kw):
 
 # ---------------------------------------------------------------- fixtures
 
+def new_key():
+    import uuid
+    return uuid.uuid4().hex[:12]
+
+
 def make_account(base, prefix="api"):
     import uuid
     token = f"{prefix}-{uuid.uuid4()}"
@@ -176,6 +181,20 @@ def transfers(base):
         REPORT.check(r.status == 400, f"POST /transfers -> 400  ({label})", f"got {r.status}")
         REPORT.check("\tat " not in r.text, "    ...and leaks no stack trace")
 
+    section("POST /transfers  - the key is scoped to the caller")
+    other_token, other_wallet, _ = make_account(base, "other")
+    shared = "shared-key-" + new_key()
+    mine = request(base, "POST", "/transfers", token=alice_token, payload={
+        "from": alice, "to": bob, "amount_paise": 1_100, "idempotency_key": shared})
+    theirs = request(base, "POST", "/transfers", token=other_token, payload={
+        "from": other_wallet, "to": bob, "amount_paise": 2_200, "idempotency_key": shared})
+    show("POST", "/transfers", theirs)
+    REPORT.check(mine.status == 200 and theirs.status == 200,
+                 "two callers may use the same idempotency_key",
+                 f"{mine.status} / {theirs.status}")
+    REPORT.check(mine.body.get("transfer_id") != theirs.body.get("transfer_id"),
+                 "    ...and each gets their own transfer, not the other's replay")
+
     section("POST /transfers  - authorisation")
     call(base, "POST", "/transfers", 403, "debiting a wallet you do not own", token=bob_token,
          payload={"from": alice, "to": bob, "amount_paise": 1, "idempotency_key": "b10"})
@@ -210,9 +229,14 @@ def operational(base, auth_token):
         REPORT.check(series in metrics.text, f"    ...exposes {series}  ({why})")
 
     inv = call(base, "GET", "/admin/invariants", 200, "invariant snapshot")
-    for field in ["conservation_holds", "no_overdraft", "ledger_reconciles", "holds"]:
+    for field in ["conservation_holds", "no_overdraft", "ledger_reconciles",
+                  "no_stuck_transfers", "holds"]:
         REPORT.check(inv.body.get(field) is True, f"    ...{field} is true",
                      f"got {inv.body.get(field)}")
+
+    REPORT.check(inv.body.get("transfers_pending") == 0,
+                 "    ...no transfer left claimed but unfinalised",
+                 f"pending = {inv.body.get('transfers_pending')}")
 
     status = call(base, "GET", "/admin/status", 200, "latency and error rate")
     REPORT.check("p99_ms" in status.body.get("latency", {}), "    ...reports p99 latency")

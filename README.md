@@ -39,11 +39,11 @@ landing on different JVMs. To prove it, spray one burst directly across both:
 Three layers, all runnable against a local stack or the deployed URL.
 
 ```bash
-./verify/apitest.sh                # every endpoint, every status code  (125 checks)
+./verify/apitest.sh                # every endpoint, every status code  (129 checks)
 ./verify/apitest.sh -v             # ...showing each request and response
-./verify/burst.sh                  # the invariants under concurrency    (45 checks)
+./verify/burst.sh                  # the invariants under concurrency    (46 checks)
 ./verify/crashtest.sh              # SIGKILL a replica mid-burst, replay every key (13)
-./mvnw test                        # 9 concurrency tests vs real Postgres (Testcontainers)
+./mvnw test                        # 10 concurrency tests vs real Postgres (Testcontainers)
 ```
 
 Everything that verifies the service lives in `verify/`; everything that
@@ -171,7 +171,9 @@ SELECT sum(signed_amount_paise) FROM ledger_entries
 ```
 
 `GET /admin/invariants` runs that, plus a check that recomputes every wallet
-balance from its ledger and counts disagreements. Money enters the system in
+balance from its ledger and counts disagreements, plus a count of transfers
+left in `PENDING` — a state that should never commit, asserted so that a broken
+assumption cannot stay silent. Money enters the system in
 exactly one place — the `OPENING` row written when a wallet is created — so
 conservation is stated as *money in the system == money ever issued*, which
 stays exact even when the grader creates new wallets mid-burst.
