@@ -240,8 +240,9 @@ Untargeted `ON CONFLICT DO NOTHING` is the correct intent. It appeared once in
 ## Container
 
 Four-stage `Dockerfile`: dependency resolution (cached separately from source),
-build, jar extraction, and a **CDS training run** that halves JVM startup — it
-matters on a free tier that cold-starts. Runtime is an Alpine JRE, runs as
+build, jar extraction, and a **CDS training run** that takes about a third off
+JVM startup (measured on this image: 1.41s → 0.98s) — worth having on a free
+tier that cold-starts. Runtime is an Alpine JRE, runs as
 **non-root** (uid 10001), defines a **`HEALTHCHECK`** against the readiness
 probe (so an instance that cannot reach Postgres reports unhealthy rather than
 merely alive), and uses an exec-form entrypoint so `SIGTERM` reaches the JVM and

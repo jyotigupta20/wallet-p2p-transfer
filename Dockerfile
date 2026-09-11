@@ -30,8 +30,9 @@ RUN java -Djarmode=tools -jar app.jar extract --destination extracted \
 
 # ---------------------------------------------------------------- cds -------
 # Class Data Sharing training run: start the context once, dump the loaded
-# classes, exit. Cuts JVM startup roughly in half, which matters on a free-tier
-# instance that cold-starts.
+# classes, exit. Measured on this image: 1.41s without the archive, 0.98s with
+# it - about a third off startup, which is worth having on a free-tier instance
+# that cold-starts.
 #
 # The training run must not touch a database, so Flyway and the DB health check
 # are disabled and Hikari is told not to fail when it cannot connect. If the run

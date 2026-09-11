@@ -103,12 +103,23 @@ accepting writes it cannot make durable. For money, refusing a transfer is
 recoverable and double-spending is not.
 
 What I gave up: writes cannot survive a primary failure, and write throughput is
-capped by one node. What I kept: the app tier is stateless, so it scales and
-fails over freely — which is why this deploys as **two replicas against one
-database**, and why `burst.sh` sprays a single burst across both. If the
-guarantees lived in process memory that test would break immediately.
+capped by one node. What I kept: the app tier holds no correctness state, so it
+scales and fails over freely.
 
-The pool is the concurrency bound (`DB_POOL_SIZE=20`): excess requests queue in
+That claim is testable rather than asserted. `docker compose up` runs **two
+replicas against one database** behind an nginx round-robin, and `burst.sh`
+accepts several base URLs so a single burst sprays across both at once — if any
+guarantee lived in process memory instead of in Postgres, that test would break
+immediately. CI runs exactly that on every push.
+
+To be precise about the deployment: the free Render tier gives **one** instance,
+so the live URL is single-replica. The multi-replica property is demonstrated in
+compose and in CI, not on the deployed URL. The same image and the same
+configuration run in both; nothing about correctness changes with the instance
+count, which is the point.
+
+The pool is the concurrency bound (`DB_POOL_SIZE`: 20 locally, 10 on the free
+instance): excess requests queue in
 HikariCP, where queueing is cheap, instead of piling onto contended row locks.
 `lock_timeout=10s` and `statement_timeout=20s` mean a pathological case degrades
 into a `503 Retry-After` — explicitly retryable, nothing applied — rather than
