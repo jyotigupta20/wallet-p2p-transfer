@@ -233,8 +233,15 @@ def operational(base):
     except Exception as e:                                    # noqa: BLE001
         REPORT.check(False, "GET /debug/logs/stream opens", str(e))
 
-    section("Unknown routes")
-    call(base, "GET", "/nope", 404, "unknown path")
+    section("Service root and unknown routes")
+    root = call(base, "GET", "/", 200, "API index at the root")
+    REPORT.check("api" in root.body and "verify_it_yourself" in root.body,
+                 "    ...the index points at the endpoints that verify the service")
+
+    missing = call(base, "GET", "/nope", 404, "unknown path")
+    REPORT.check(missing.body.get("code") == "ENDPOINT_NOT_FOUND",
+                 "    ...an unknown path is ENDPOINT_NOT_FOUND, not WALLET_NOT_FOUND",
+                 f"got {missing.body.get('code')}")
 
 
 def cross_cutting(base, token):

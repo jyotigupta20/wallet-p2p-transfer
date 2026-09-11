@@ -67,9 +67,14 @@ public class ApiExceptionHandler {
         return respond(ErrorCode.INVALID_REQUEST, "A required parameter is missing or malformed");
     }
 
+    /**
+     * An unknown path is not a missing wallet. Reusing WALLET_NOT_FOUND here
+     * meant that browsing to the service root reported a wallet lookup
+     * failure, which is both wrong and confusing to anyone exploring the API.
+     */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleNoResource(NoResourceFoundException ex) {
-        return respond(ErrorCode.WALLET_NOT_FOUND, "No such endpoint");
+        return respond(ErrorCode.ENDPOINT_NOT_FOUND, ErrorCode.ENDPOINT_NOT_FOUND.defaultDetail());
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

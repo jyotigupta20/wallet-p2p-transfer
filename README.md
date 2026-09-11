@@ -39,7 +39,7 @@ landing on different JVMs. To prove it, spray one burst directly across both:
 Three layers, all runnable against a local stack or the deployed URL.
 
 ```bash
-./apitest.sh                       # every endpoint, every status code  (113 checks)
+./apitest.sh                       # every endpoint, every status code  (116 checks)
 ./apitest.sh -v                    # ...showing each request and response
 ./burst.sh                         # the invariants under concurrency    (45 checks)
 ./mvnw test                        # 9 concurrency tests vs real Postgres (Testcontainers)
@@ -99,6 +99,7 @@ wire. `12.5` is rejected, never truncated.
 
 | Method | Path | Notes |
 |---|---|---|
+| `GET` | `/` | API index — start here. |
 | `POST` | `/wallets` | Get-or-create the caller's wallet. Always `200`. |
 | `GET` | `/wallets/{id}` | Current balance. |
 | `POST` | `/transfers` | `{from, to, amount_paise, idempotency_key}` |
