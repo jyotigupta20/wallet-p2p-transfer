@@ -104,16 +104,40 @@ public class ApiExceptionHandler {
     private static final Set<String> RETRYABLE_SQL_STATES = Set.of(
             "40001",   // serialization_failure
             "40P01",   // deadlock_detected
-            "55P03",   // lock_not_available  (our lock_timeout)
-            "57014",   // query_canceled      (our statement_timeout)
-            "53300",   // too_many_connections
-            "08000", "08003", "08006"  // connection exceptions
+            "55P03",   // lock_not_available   (our lock_timeout)
+            "57014",   // query_canceled       (our statement_timeout)
+            "53300"    // too_many_connections
     );
+
+    /**
+     * Whole SQLSTATE classes that are retryable by definition.
+     *
+     *   08xxx - connection exception
+     *   57Pxx - operator intervention: the server is shutting down, restarting,
+     *           or not yet accepting connections
+     *
+     * 57P03 (cannot_connect_now) is the one that matters for this deployment:
+     * the free-tier database autosuspends, and a request that arrives while it
+     * is waking gets exactly that. Enumerating individual codes missed it, and
+     * a waking database is the textbook case of "try again in a moment" - it
+     * must not be reported as a server fault.
+     */
+    private static final Set<String> RETRYABLE_SQL_STATE_CLASSES = Set.of("08", "57P");
+
+    static boolean isRetryable(String sqlState) {
+        if (sqlState == null || sqlState.isEmpty()) {
+            return false;
+        }
+        if (RETRYABLE_SQL_STATES.contains(sqlState)) {
+            return true;
+        }
+        return RETRYABLE_SQL_STATE_CLASSES.stream().anyMatch(sqlState::startsWith);
+    }
 
     @ExceptionHandler({DataAccessException.class, TransactionException.class})
     public ResponseEntity<ApiError> handleDataAccess(Exception ex, HttpServletRequest request) {
         String sqlState = sqlStateOf(ex);
-        boolean retryable = RETRYABLE_SQL_STATES.contains(sqlState)
+        boolean retryable = isRetryable(sqlState)
                 || ex instanceof org.springframework.dao.TransientDataAccessException
                 || ex instanceof org.springframework.dao.ConcurrencyFailureException
                 || ex instanceof org.springframework.transaction.CannotCreateTransactionException;

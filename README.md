@@ -43,7 +43,7 @@ Three layers, all runnable against a local stack or the deployed URL.
 ./verify/apitest.sh -v             # ...showing each request and response
 ./verify/burst.sh                  # the invariants under concurrency    (46 checks)
 ./verify/crashtest.sh              # SIGKILL a replica mid-burst, replay every key (13)
-./mvnw test                        # 10 concurrency tests vs real Postgres (Testcontainers)
+./mvnw test                        # 33 tests: 10 concurrency vs real Postgres, 23 unit
 ```
 
 Everything that verifies the service lives in `verify/`; everything that
