@@ -84,10 +84,26 @@ management:
       application: paytm-wallet
       instance: ${INSTANCE_ID:local}
     distribution:
+      # Both, deliberately:
+      #  - percentiles-histogram exports le= buckets so Grafana can compute a
+      #    TRUE p99 across both replicas with histogram_quantile(). Percentiles
+      #    cannot be averaged, so per-instance quantiles alone would be wrong.
+      #  - percentiles exports client-side quantile= series so that a reviewer
+      #    who simply curls /metrics sees a p99 number without needing
+      #    Prometheus at all.
       percentiles-histogram:
-        http.server.requests: true
+        "[http.server.requests]": true
       percentiles:
-        http.server.requests: 0.5,0.95,0.99
+        "[http.server.requests]":
+          - 0.5
+          - 0.95
+          - 0.99
+      # Bound the bucket range to something a wallet API can plausibly take.
+      # Unbounded, this emitted ~900 series per instance for no extra insight.
+      minimum-expected-value:
+        "[http.server.requests]": 1ms
+      maximum-expected-value:
+        "[http.server.requests]": 10s
 
 app:
   instance-id: ${INSTANCE_ID:local}

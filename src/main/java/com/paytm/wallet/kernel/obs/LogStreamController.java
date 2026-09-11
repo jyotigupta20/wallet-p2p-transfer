@@ -1,0 +1,121 @@
+package com.paytm.wallet.kernel.obs;
+
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Publicly viewable structured logs, served by the service itself.
+ *
+ *   curl -s  https://HOST/debug/logs?n=100      # recent tail, newline-delimited JSON
+ *   curl -N  https://HOST/debug/logs/stream     # watch events land live
+ *
+ * Run the stream in one pane and burst.sh in another and the domain events -
+ * transfer.completed, transfer.declined, transfer.idempotent_replay - scroll
+ * past as they happen, each carrying its correlation id and the instance that
+ * served it.
+ *
+ * Nothing secret is logged anywhere in this service: bearer tokens are hashed
+ * before they are ever stored and are never logged, and the domain events carry
+ * only wallet ids, amounts and client-chosen idempotency keys. So this endpoint
+ * exposes no more than GET /wallets/{id} already does.
+ */
+@RestController
+public class LogStreamController {
+
+    /** Bounded: a slow SSE client must never apply back-pressure to the money path. */
+    private static final int QUEUE_CAPACITY = 1_000;
+    private static final long STREAM_TIMEOUT_MS = 30 * 60 * 1_000L;
+
+    private final LogRingBuffer buffer = LogRingBuffer.get();
+    private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
+
+    public LogStreamController() {
+        // One shared dispatcher thread does all the writing. The logging thread
+        // only ever does a non-blocking offer(), so a stalled reader costs at
+        // most its own dropped lines - it can never slow down a transfer.
+        Thread dispatcher = new Thread(this::dispatchLoop, "log-sse-dispatcher");
+        dispatcher.setDaemon(true);
+        dispatcher.start();
+    }
+
+    @GetMapping(value = "/debug/logs", produces = "application/x-ndjson")
+    public String tail(@RequestParam(defaultValue = "100") int n) {
+        List<String> lines = buffer.tail(Math.clamp(n, 1, 2_000));
+        return String.join("\n", lines) + (lines.isEmpty() ? "" : "\n");
+    }
+
+    @GetMapping("/debug/logs/info")
+    public Map<String, Object> info() {
+        return Map.of(
+                "buffered_lines", buffer.tail(Integer.MAX_VALUE).size(),
+                "total_written", buffer.totalWritten(),
+                "live_stream_subscribers", subscribers.size());
+    }
+
+    @GetMapping(value = "/debug/logs/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
+        Subscriber subscriber = new Subscriber(emitter);
+
+        emitter.onCompletion(() -> remove(subscriber));
+        emitter.onTimeout(() -> remove(subscriber));
+        emitter.onError(e -> remove(subscriber));
+
+        subscribers.add(subscriber);
+        buffer.subscribe(subscriber.sink);
+        return emitter;
+    }
+
+    private void remove(Subscriber subscriber) {
+        buffer.unsubscribe(subscriber.sink);
+        subscribers.remove(subscriber);
+    }
+
+    private void dispatchLoop() {
+        while (!Thread.currentThread().isInterrupted()) {
+            boolean idle = true;
+            for (Subscriber s : subscribers) {
+                String line;
+                while ((line = s.queue.poll()) != null) {
+                    idle = false;
+                    try {
+                        s.emitter.send(SseEmitter.event().data(line));
+                    } catch (IOException | IllegalStateException e) {
+                        remove(s);
+                        break;
+                    }
+                }
+            }
+            if (idle) {
+                try {
+                    TimeUnit.MILLISECONDS.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
+
+    private static final class Subscriber {
+        final SseEmitter emitter;
+        final BlockingQueue<String> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
+        final java.util.function.Consumer<String> sink;
+
+        Subscriber(SseEmitter emitter) {
+            this.emitter = emitter;
+            this.sink = queue::offer;   // returns false and drops when full; never blocks
+        }
+    }
+}
