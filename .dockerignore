@@ -6,3 +6,6 @@ docs/
 !README.md
 .env
 .DS_Store
+verify/
+deploy/connection/
+.github/

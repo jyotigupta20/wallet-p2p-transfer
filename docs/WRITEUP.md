@@ -1,35 +1,5 @@
 # Wallet & P2P Transfer — write-up
 
-## The one page
-
-**Data model.** Four tables. Every graded invariant is a database constraint,
-not application code: `UNIQUE (user_id)` on wallets is race-free get-or-create;
-`CHECK (balance_paise >= 0)` is no-overdraft; `UNIQUE (user_id,
-idempotency_key)` is exactly-once. A double-entry `ledger_entries` table makes
-conservation a query — `sum(signed_amount_paise)` over transfer rows must be
-zero, forever — which `GET /admin/invariants` runs so anyone can verify the
-claims rather than trust them. Money is `BIGINT` paise and `long`, end to end.
-
-**Mechanism.** One transaction at READ COMMITTED: claim the idempotency key with
-`ON CONFLICT DO NOTHING`, lock both wallets in ascending id order at
-`FOR NO KEY UPDATE`, then an atomic conditional debit whose rows-affected *is*
-the decision. Rejected: SERIALIZABLE (this contention pattern is its worst
-case), optimistic versions (livelock), Redis SETNX (cannot commit atomically
-with the debit), per-wallet queues (right at a scale this is not).
-
-**Deadlock.** Sorted ordering alone was not sufficient — the foreign keys take
-`FOR KEY SHARE` on both rows first, so both directions deadlocked on upgrade.
-`FOR NO KEY UPDATE` is the correct strength and does not conflict with it.
-
-**Idempotency** lives in a unique constraint committed in the same transaction
-as the money. **Consistency over availability**, deliberately. **₹0.** **AI**
-wrote most of this; I directed the process and own the verification — 180
-assertions, and ten defects it introduced, listed at the end.
-
----
-
-*Detail follows.*
-
 ## Data model
 
 Four tables. Every graded invariant is a constraint, so a logic bug cannot
@@ -64,7 +34,7 @@ money *out* of the destination wallet. Jackson is configured with
 `accept-float-as-int=false`, so `12.5` is rejected rather than truncated to `12`.
 Money is `BIGINT`/`long` end to end.
 
-## Simplest-correct mechanism, and what I rejected
+## Mechanism
 
 One transaction at **READ COMMITTED**:
 
@@ -80,11 +50,22 @@ It is the simplest correct thing because each invariant maps to one constraint
 plus one statement, and because the decisions are made by the database rather
 than by a Java `if` that races.
 
-**Deadlock.** Sorted lock ordering is necessary but was *not sufficient*, and
-finding out why was the most interesting part of this exercise. `transfers` has
-foreign keys to `wallets`, so step 1 takes a `FOR KEY SHARE` lock on both wallet
-rows — in constraint-check order, which I don't control — and holds it for the
-transaction. `FOR KEY SHARE` doesn't conflict with itself, so A→B and B→A both
+**Rejected:** `SERIALIZABLE` — correct, but this exact contention pattern is its
+worst case: a storm of `40001`s plus a mandatory application retry loop, heavier
+*and* slower here. **Optimistic version columns** — livelock on hot wallets under
+exactly the graded burst. **Redis `SETNX` for idempotency** — cannot commit
+atomically with the debit, so a crash between the two double-spends or poisons
+the key permanently. **Per-wallet actor/queue** — the right answer once a single
+primary stops absorbing the write rate, wrong here: durable queueing and a new
+failure surface to replace a row lock.
+
+## Deadlock
+
+Sorted lock ordering is necessary but was **not sufficient**, and finding out
+why was the most interesting part of this exercise. `transfers` has foreign
+keys to `wallets`, so the key-claiming `INSERT` above takes a `FOR KEY SHARE`
+lock on both wallet rows — in constraint-check order, which I don't control —
+and holds it for the rest of the transaction. `FOR KEY SHARE` doesn't conflict with itself, so A→B and B→A both
 end up holding shared locks on *both* rows and then both try to upgrade to `FOR
 UPDATE`. Sorting the upgrades cannot help; the shared locks are already taken.
 That produced 100 deadlocks in one 300-way burst. The fix is a lock strength,
@@ -95,16 +76,7 @@ the wait graph and sorted ordering becomes sufficient. Rejected alternative:
 dropping the foreign keys, which trades referential integrity in a money schema
 for something a weaker lock gives free.
 
-**Rejected:** `SERIALIZABLE` — correct, but this exact contention pattern is its
-worst case: a storm of `40001`s plus a mandatory application retry loop, heavier
-*and* slower here. **Optimistic version columns** — livelock on hot wallets under
-exactly the graded burst. **Redis `SETNX` for idempotency** — cannot commit
-atomically with the debit, so a crash between the two double-spends or poisons
-the key permanently. **Per-wallet actor/queue** — the right answer once a single
-primary stops absorbing the write rate, wrong here: durable queueing and a new
-failure surface to replace a row lock.
-
-## Where idempotency lives
+## Idempotency
 
 In `UNIQUE (user_id, idempotency_key)`, claimed **in the same transaction as the
 debit and credit**. There is no window in which a key exists without its money or

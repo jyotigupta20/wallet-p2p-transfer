@@ -7,8 +7,8 @@ idempotency key, or a second wallet for the same user.
 
 - **Live URL:** https://paytm-wallet-cv48.onrender.com  ·  [invariants](https://paytm-wallet-cv48.onrender.com/admin/invariants) · [status](https://paytm-wallet-cv48.onrender.com/admin/status) · [metrics](https://paytm-wallet-cv48.onrender.com/metrics)
 - **Public logs:** [`https://paytm-wallet-cv48.onrender.com/debug/logs`](https://paytm-wallet-cv48.onrender.com/debug/logs) — or `curl -N https://paytm-wallet-cv48.onrender.com/debug/logs/stream` to watch them live
-- **One-command burst:** `./burst.sh https://paytm-wallet-cv48.onrender.com` — asserts all four invariants, exits non-zero on any failure
-- **API coverage:** `./apitest.sh https://paytm-wallet-cv48.onrender.com` — every endpoint, every status code
+- **One-command burst:** `./verify/burst.sh https://paytm-wallet-cv48.onrender.com` — asserts all four invariants, exits non-zero on any failure
+- **API coverage:** `./verify/apitest.sh https://paytm-wallet-cv48.onrender.com` — every endpoint, every status code
 - **Write-up:** [`docs/WRITEUP.md`](docs/WRITEUP.md)
 
 ---
@@ -17,14 +17,14 @@ idempotency key, or a second wallet for the same user.
 
 ```bash
 docker compose up --build          # Postgres + TWO app replicas + nginx round-robin
-./burst.sh http://localhost:8000   # through the load balancer
+./verify/burst.sh http://localhost:8000   # through the load balancer
 ```
 
 Two replicas is the point, not decoration: correctness has to survive requests
 landing on different JVMs. To prove it, spray one burst directly across both:
 
 ```bash
-./burst.sh http://localhost:8080 http://localhost:8081
+./verify/burst.sh http://localhost:8080 http://localhost:8081
 ```
 
 | Service | URL | Notes |
@@ -39,11 +39,15 @@ landing on different JVMs. To prove it, spray one burst directly across both:
 Three layers, all runnable against a local stack or the deployed URL.
 
 ```bash
-./apitest.sh                       # every endpoint, every status code  (125 checks)
-./apitest.sh -v                    # ...showing each request and response
-./burst.sh                         # the invariants under concurrency    (45 checks)
+./verify/apitest.sh                # every endpoint, every status code  (125 checks)
+./verify/apitest.sh -v             # ...showing each request and response
+./verify/burst.sh                  # the invariants under concurrency    (45 checks)
+./verify/crashtest.sh              # SIGKILL a replica mid-burst, replay every key (13)
 ./mvnw test                        # 9 concurrency tests vs real Postgres (Testcontainers)
 ```
+
+Everything that verifies the service lives in `verify/`; everything that
+deploys it lives in `deploy/`.
 
 `apitest.sh` covers the API surface one request at a time: every success path,
 every rejection path, the response headers (`X-Idempotent-Replay`,
@@ -58,20 +62,20 @@ body:
 
 ```bash
 export BASE=http://localhost:8000
-./api.sh demo                    # a scripted tour of every endpoint
-./api.sh wallet alice
-./api.sh transfer alice <from> <to> 50000 key-1
-./api.sh invariants
-./api.sh watch                   # live log stream
-./api.sh metrics                 # just the wallet_* series
+./verify/api.sh demo             # a scripted tour of every endpoint
+./verify/api.sh wallet alice
+./verify/api.sh transfer alice <from> <to> 50000 key-1
+./verify/api.sh invariants
+./verify/api.sh watch            # live log stream
+./verify/api.sh metrics          # just the wallet_* series
 ```
 
 `burst.sh` is the concurrency harness — the four graded invariants under
 simultaneous load. Pass several URLs to spray one burst across replicas:
 
 ```bash
-./burst.sh http://localhost:8080 http://localhost:8081
-./burst.sh --transfers 1000 --contended-wallets 3     # maximum contention
+./verify/burst.sh http://localhost:8080 http://localhost:8081
+./verify/burst.sh --transfers 1000 --contended-wallets 3   # maximum contention
 ```
 
 Testcontainers requires Docker. Every test releases its threads from a `CyclicBarrier`, so the
@@ -193,7 +197,7 @@ own. `/debug/logs` is content-negotiated: **open it in a browser** for a live
 console that tails the stream, or curl it for newline-delimited JSON to pipe
 into `jq`. Add `?format=json` or `?format=html` to override.
 
-To watch events land during a burst, run this in one pane and `./burst.sh` in
+To watch events land during a burst, run this in one pane and `./verify/burst.sh` in
 another:
 
 ```bash
@@ -278,10 +282,16 @@ src/main/java/com/paytm/wallet/
   admin/          invariant checks, status
 src/main/resources/db/migration/V1__init.sql   the invariants, as constraints
 src/test/java/    9 concurrency tests
-scripts/burst.py  the burst harness
+verify/
+  burst.sh        the four invariants under concurrency
+  apitest.sh      every endpoint, every status code
+  crashtest.sh    SIGKILL a replica mid-burst, then replay every key
+  api.sh          ad-hoc client for driving the API by hand
+  lib/            the harnesses themselves (standard library only)
+deploy/           nginx config, Neon env helper
 ```
 
-`kernel/` is deliberately domain-free. The graded properties here — an
-idempotency key committed with its side effect, an atomic conditional write,
-clean 4xx, correlation ids — are the same properties every exercise in this
-round needs, so they are separated from the wallet itself.
+`kernel/` is deliberately domain-free. An idempotency key committed with its
+side effect, an atomic conditional write, clean 4xx, correlation ids — none of
+that is specific to wallets, so it is separated from the wallet itself and
+would carry unchanged into any other service that moves money.

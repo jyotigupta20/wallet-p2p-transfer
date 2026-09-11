@@ -4,14 +4,14 @@
 # hand - for exploring, for demoing, and for answering "show me" live.
 #
 #   export BASE=http://localhost:8000          # or the deployed URL
-#   ./api.sh wallet alice                      # get-or-create alice's wallet
-#   ./api.sh wallet bob
-#   ./api.sh transfer alice <from> <to> 50000 key-1
-#   ./api.sh transfer alice <from> <to> 50000 key-1     # same key -> replay
-#   ./api.sh balance <wallet-id>
-#   ./api.sh invariants
-#   ./api.sh watch                             # live log stream
-#   ./api.sh demo                              # scripted tour of every endpoint
+#   ./verify/api.sh wallet alice                      # get-or-create alice's wallet
+#   ./verify/api.sh wallet bob
+#   ./verify/api.sh transfer alice <from> <to> 50000 key-1
+#   ./verify/api.sh transfer alice <from> <to> 50000 key-1     # same key -> replay
+#   ./verify/api.sh balance <wallet-id>
+#   ./verify/api.sh invariants
+#   ./verify/api.sh watch                             # live log stream
+#   ./verify/api.sh demo                              # scripted tour of every endpoint
 #
 set -uo pipefail
 BASE="${BASE:-http://localhost:8080}"

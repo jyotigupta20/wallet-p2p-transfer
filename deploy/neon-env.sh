@@ -4,7 +4,7 @@
 # The connection file is gitignored and never committed - deployments get these
 # values as environment variables set in the host's dashboard.
 #
-#   source scripts/neon-env.sh && ./mvnw.sh spring-boot:run
+#   source deploy/neon-env.sh && ./mvnw.sh spring-boot:run
 #
 # Note: channel_binding is a libpq option that PgJDBC does not understand, so
 # it is dropped. sslmode=require is kept - Neon refuses plaintext connections.
@@ -13,7 +13,7 @@
 # which silently resolves to the wrong directory.
 if [[ -z "${CONN_FILE:-}" ]]; then
   REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  CONN_FILE="$REPO_ROOT/scripts/connection/db_connection.yml"
+  CONN_FILE="$REPO_ROOT/deploy/connection/db_connection.yml"
 fi
 
 if [[ ! -f "$CONN_FILE" ]]; then

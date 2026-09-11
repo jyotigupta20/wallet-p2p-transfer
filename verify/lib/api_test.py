@@ -9,9 +9,9 @@ no as by how it says yes, so the rejection paths are tested as carefully as the
 happy ones - every one must be a specific 4xx, never a 500, never a stack
 trace.
 
-  ./apitest.sh                         # local stack
-  ./apitest.sh https://your.url        # deployed
-  ./apitest.sh -v                      # show every request and response
+  ./verify/apitest.sh                         # local stack
+  ./verify/apitest.sh https://your.url        # deployed
+  ./verify/apitest.sh -v                      # show every request and response
 
 Exit code is 0 only if every check passes.
 """
