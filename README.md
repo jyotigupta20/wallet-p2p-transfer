@@ -283,7 +283,7 @@ src/main/java/com/paytm/wallet/
   transfer/       the whole exercise; read TransferService first
   admin/          invariant checks, status
 src/main/resources/db/migration/V1__init.sql   the invariants, as constraints
-src/test/java/    9 concurrency tests
+src/test/java/    33 tests: 10 concurrency vs real Postgres, 23 unit
 verify/
   burst.sh        the four invariants under concurrency
   apitest.sh      every endpoint, every status code

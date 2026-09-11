@@ -170,7 +170,7 @@ AI I used but how I directed it and how I know the result is correct.
 **Directed.** Environment before business logic — Docker working end to end
 before a line of domain code, so deployment was never the thing left until 2am.
 Scoping UI out and demanding endpoint-level coverage instead, which produced the
-125-check API suite and found two defects. Verifying the submission against the
+129-check API suite and found two defects. Verifying the submission against the
 brief clause by clause rather than trusting that it looked complete. And
 exercising the deployed service by hand, which found three bugs every automated
 suite had missed — they were all curl-shaped; none of them opened a browser.
@@ -182,8 +182,8 @@ the container and deploy topology. I can defend each; I did not originate them.
 **Accepted as typed.** Log field naming, Micrometer histogram bounds, nginx
 directives, most prose.
 
-**What it got wrong.** Ten defects reached working code. None were found by
-reading it:
+**What it got wrong.** Eleven defects reached working code. Not one was found
+by reading it:
 
 | Defect | Caught by |
 |---|---|
@@ -196,8 +196,15 @@ reading it:
 | Unknown path answering `WALLET_NOT_FOUND` | opening it in a browser |
 | ndjson content-type downloading instead of displaying | opening it in a browser |
 | Spring MVC client errors returning 500 | hostile probing of the live URL |
+| A waking autosuspended database (`57P03`) reported as a server fault | a 5xx that only appeared after a deploy |
 | Two overstated claims in this document | audit against deployed behaviour |
 
-**What I own is the verification, not the typing.** 180 assertions across four
-suites, all in CI; two regression tests for defects that actually shipped; and
+It also twice failed to check its own assumptions rather than getting something
+wrong: nothing detected a transfer stuck mid-flight, and nothing verified that
+an idempotency key is scoped per caller rather than globally. Both are now
+asserted.
+
+**What I own is the verification, not the typing.** 221 assertions across four
+suites, all in CI; regression tests for the defects that actually shipped; and
 the deadlock test's teeth proven by reverting the fix and confirming it fails.
+The last three findings all came from distrusting a green suite.
