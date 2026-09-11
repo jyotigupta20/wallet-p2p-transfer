@@ -3,6 +3,7 @@ package com.paytm.wallet.wallet;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,6 +49,22 @@ public class WalletRepository {
                 .param("u", userId)
                 .query(WalletRepository::map)
                 .optional();
+    }
+
+    /**
+     * Both endpoints of a transfer in ONE round trip.
+     *
+     * Round-trip count is not cosmetic here: every statement in the transfer
+     * happens while row locks are held, so each extra round trip extends the
+     * lock hold time and directly reduces throughput under contention. That is
+     * invisible on localhost and brutal when the database is a region away.
+     */
+    public List<Wallet> findBothById(UUID first, UUID second) {
+        return db.sql("SELECT id, user_id, balance_paise FROM wallets WHERE id IN (:a, :b)")
+                .param("a", first)
+                .param("b", second)
+                .query(WalletRepository::map)
+                .list();
     }
 
     public Optional<Wallet> findById(UUID id) {

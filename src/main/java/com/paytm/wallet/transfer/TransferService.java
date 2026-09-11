@@ -143,18 +143,21 @@ public class TransferService {
     }
 
     private void authorise(Caller caller, TransferRequest r) {
-        Wallet from = wallets.findById(r.from())
+        // One round trip for both wallets rather than two. See
+        // WalletRepository.findBothById for why round trips are expensive here.
+        var found = wallets.findBothById(r.from(), r.to());
+        Wallet from = found.stream().filter(w -> w.id().equals(r.from())).findFirst()
                 .orElseThrow(() -> new ApiException(ErrorCode.WALLET_NOT_FOUND,
                         "Source wallet " + r.from() + " does not exist"));
+        if (found.stream().noneMatch(w -> w.id().equals(r.to()))) {
+            throw new ApiException(ErrorCode.WALLET_NOT_FOUND,
+                    "Destination wallet " + r.to() + " does not exist");
+        }
         if (!from.userId().equals(caller.userId())) {
             // The one authorisation rule that actually protects money: you may
             // only debit a wallet you own. Reads stay open, because the burst
             // script asserts conservation across wallets it does not own.
             throw new ApiException(ErrorCode.FORBIDDEN);
-        }
-        if (wallets.findById(r.to()).isEmpty()) {
-            throw new ApiException(ErrorCode.WALLET_NOT_FOUND,
-                    "Destination wallet " + r.to() + " does not exist");
         }
     }
 

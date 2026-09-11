@@ -20,6 +20,7 @@ import json
 import random
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -45,6 +46,11 @@ class Stats:
 
 STATS = Stats()
 
+# Generous by default: when the app and its database are in different
+# regions a contended transfer can legitimately take seconds, and a
+# client-side timeout would be scored as a service failure it is not.
+TIMEOUT_SECONDS = 60
+
 
 class Response:
     __slots__ = ("status", "body", "headers", "text")
@@ -62,7 +68,8 @@ class Response:
         return f"<{self.status} {self.text[:120]}>"
 
 
-def request(base, method, path, token=None, payload=None, timeout=30):
+def request(base, method, path, token=None, payload=None, timeout=None):
+    timeout = timeout or TIMEOUT_SECONDS
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(base.rstrip("/") + path, data=data, method=method)
     req.add_header("Content-Type", "application/json")
@@ -150,6 +157,32 @@ def balance(urls, wallet_id, token):
 
 def invariants(urls):
     return request(urls[0], "GET", "/admin/invariants").body
+
+
+def wait_until_quiet(urls, timeout=90):
+    """
+    Block until the server stops producing terminal transfers.
+
+    Necessary because a request that timed out CLIENT-side may still be
+    committing server-side. Summing balances with several separate reads while
+    that is happening observes a torn snapshot and reports a conservation
+    failure that did not occur. Conservation is a property of the ledger at an
+    instant, not of several reads taken across one.
+    """
+    deadline = time.time() + timeout
+    previous, stable = None, 0
+    while time.time() < deadline:
+        inv = invariants(urls)
+        current = (inv.get("transfers_completed"), inv.get("transfers_declined"))
+        if current == previous:
+            stable += 1
+            if stable >= 2:
+                return inv
+        else:
+            stable = 0
+        previous = current
+        time.sleep(0.5)
+    return invariants(urls)
 
 
 # ---------------------------------------------------------------- scenarios
@@ -248,8 +281,10 @@ def s4_conservation_under_contention(urls, wallets_n, transfers_n):
     statuses = Counter(r.status for r in responses)
     completed = sum(1 for r in responses if r.status == 200)
     declined = sum(1 for r in responses if r.status == 422)
+
+    # Let anything still in flight land before measuring; see wait_until_quiet.
+    inv_after = wait_until_quiet(urls)
     after_total = sum(balance(urls, w, t) for t, w, _ in accounts)
-    inv_after = invariants(urls)
 
     REPORT.check(STATS.server_errors == 0, "zero 5xx responses across the entire run so far",
                  f"5xx count = {STATS.server_errors}")
@@ -257,6 +292,11 @@ def s4_conservation_under_contention(urls, wallets_n, transfers_n):
                  f"got {dict(statuses)}")
     REPORT.check(completed + declined == transfers_n, "every request reached a terminal outcome",
                  f"{completed} completed + {declined} declined = {completed + declined}")
+    REPORT.check(inv_after["total_wallet_balance_paise"] - inv_before["total_wallet_balance_paise"]
+                 == inv_after["total_issued_paise"] - inv_before["total_issued_paise"],
+                 "CONSERVATION (server snapshot): balance moved only by what was issued",
+                 f"balance +{inv_after['total_wallet_balance_paise'] - inv_before['total_wallet_balance_paise']}, "
+                 f"issued +{inv_after['total_issued_paise'] - inv_before['total_issued_paise']}")
     REPORT.check(before_total == after_total, "CONSERVATION: total balance unchanged",
                  f"{before_total} -> {after_total}")
     REPORT.check(inv_after["negative_balance_count"] == 0, "NO OVERDRAFT: no negative balance",
@@ -271,7 +311,6 @@ def s4_conservation_under_contention(urls, wallets_n, transfers_n):
     REPORT.check(inv_after["total_wallet_balance_paise"] == inv_after["total_issued_paise"],
                  "money in the system == money ever issued",
                  f"{inv_after['total_wallet_balance_paise']} vs {inv_after['total_issued_paise']}")
-    _ = inv_before
 
 
 def s5_overdraft_storm(urls, n):
