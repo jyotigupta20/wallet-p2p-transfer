@@ -1,13 +1,18 @@
 package com.paytm.wallet.kernel.obs;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -39,6 +44,7 @@ public class LogStreamController {
     private static final long STREAM_TIMEOUT_MS = 30 * 60 * 1_000L;
 
     private final LogRingBuffer buffer = LogRingBuffer.get();
+    private final String viewerHtml = loadViewer();
     private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
 
     public LogStreamController() {
@@ -50,10 +56,39 @@ public class LogStreamController {
         dispatcher.start();
     }
 
-    @GetMapping(value = "/debug/logs", produces = "application/x-ndjson")
-    public String tail(@RequestParam(defaultValue = "100") int n) {
+    /**
+     * Content-negotiated on purpose.
+     *
+     * The deliverable is logs that are *viewable*, and serving
+     * application/x-ndjson to a browser makes it download a file instead of
+     * showing anything - so a reviewer who clicks the link gets a save dialog
+     * rather than the logs. A browser (Accept: text/html) therefore gets a
+     * plain console that tails the SSE stream; curl, jq and everything else
+     * still get newline-delimited JSON exactly as before.
+     *
+     * ?format=json or ?format=html overrides the negotiation either way.
+     */
+    @GetMapping("/debug/logs")
+    public ResponseEntity<String> tail(
+            @RequestParam(defaultValue = "100") int n,
+            @RequestParam(required = false) String format,
+            @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept) {
+
+        boolean wantsHtml = "html".equalsIgnoreCase(format)
+                || (format == null && accept != null && accept.contains(MediaType.TEXT_HTML_VALUE));
+
+        if (wantsHtml && viewerHtml != null) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.TEXT_HTML)
+                    .cacheControl(CacheControl.noCache())
+                    .body(viewerHtml);
+        }
+
         List<String> lines = buffer.tail(Math.clamp(n, 1, 2_000));
-        return String.join("\n", lines) + (lines.isEmpty() ? "" : "\n");
+        String body = String.join("\n", lines) + (lines.isEmpty() ? "" : "\n");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, "application/x-ndjson; charset=utf-8")
+                .body(body);
     }
 
     @GetMapping("/debug/logs/info")
@@ -109,6 +144,15 @@ public class LogStreamController {
     private void remove(Subscriber subscriber) {
         buffer.unsubscribe(subscriber.sink);
         subscribers.remove(subscriber);
+    }
+
+    /** Read once at startup; null simply means the ndjson form is always served. */
+    private static String loadViewer() {
+        try (var in = LogStreamController.class.getResourceAsStream("/logviewer.html")) {
+            return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     private void dispatchLoop() {

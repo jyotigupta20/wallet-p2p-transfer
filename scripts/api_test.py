@@ -219,7 +219,21 @@ def operational(base):
     REPORT.check(status.body.get("server_errors_5xx") == 0, "    ...zero 5xx so far",
                  f"got {status.body.get('server_errors_5xx')}")
 
-    call(base, "GET", "/debug/logs?n=5", 200, "recent structured logs")
+    nd = call(base, "GET", "/debug/logs?n=5", 200, "recent structured logs")
+    REPORT.check("ndjson" in (nd.header("Content-Type") or ""),
+                 "    ...tools get newline-delimited JSON",
+                 f"got {nd.header('Content-Type')}")
+
+    # A browser must get something it will DISPLAY. Serving ndjson to a browser
+    # makes it download a file, which defeats "publicly viewable logs".
+    page = request(base, "GET", "/debug/logs", accept="text/html")
+    show("GET", "/debug/logs", page)
+    REPORT.check(page.status == 200 and "text/html" in (page.header("Content-Type") or ""),
+                 "GET /debug/logs -> 200 text/html  (a browser gets a viewable page)",
+                 f"got {page.status} {page.header('Content-Type')}")
+    REPORT.check("EventSource" in page.text,
+                 "    ...and that page tails the live stream")
+
     call(base, "GET", "/debug/logs/info", 200, "log buffer state")
 
     # SSE: assert it opens with the right content type, then close immediately.

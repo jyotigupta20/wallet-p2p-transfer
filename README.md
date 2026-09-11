@@ -39,7 +39,7 @@ landing on different JVMs. To prove it, spray one burst directly across both:
 Three layers, all runnable against a local stack or the deployed URL.
 
 ```bash
-./apitest.sh                       # every endpoint, every status code  (116 checks)
+./apitest.sh                       # every endpoint, every status code  (119 checks)
 ./apitest.sh -v                    # ...showing each request and response
 ./burst.sh                         # the invariants under concurrency    (45 checks)
 ./mvnw test                        # 9 concurrency tests vs real Postgres (Testcontainers)
@@ -108,7 +108,7 @@ wire. `12.5` is rejected, never truncated.
 | `GET` | `/metrics` | Prometheus exposition. |
 | `GET` | `/admin/invariants` | **Verify the graded invariants yourself, in one curl.** |
 | `GET` | `/admin/status` | Request counts, error rate, p50/p95/p99. |
-| `GET` | `/debug/logs` | Recent structured logs (ndjson). |
+| `GET` | `/debug/logs` | Recent structured logs. A browser gets a live console; curl gets ndjson. |
 | `GET` | `/debug/logs/stream` | Live log stream (SSE). |
 
 ### Two response-shape decisions
@@ -189,7 +189,12 @@ the compose load balancer, read a specific replica on :8080 / :8081, or match
 the `X-Instance-Id` header on the response you are tracing.
 
 Every free host puts its log viewer behind a login, so the service serves its
-own. Run this in one pane and `./burst.sh` in another:
+own. `/debug/logs` is content-negotiated: **open it in a browser** for a live
+console that tails the stream, or curl it for newline-delimited JSON to pipe
+into `jq`. Add `?format=json` or `?format=html` to override.
+
+To watch events land during a burst, run this in one pane and `./burst.sh` in
+another:
 
 ```bash
 curl -N https://<live-url>/debug/logs/stream
