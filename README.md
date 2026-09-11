@@ -5,9 +5,10 @@ enforced by a database constraint rather than by application code**. The app can
 have bugs; Postgres still cannot represent a negative balance, a duplicate
 idempotency key, or a second wallet for the same user.
 
-- **Live URL:** _(filled in at deploy)_
-- **Public logs:** `GET /debug/logs/stream` on the live URL — see [Observability](#observability)
-- **One-command burst:** `./burst.sh <url>` — asserts all four invariants, exits non-zero on any failure
+- **Live URL:** https://paytm-wallet-cv48.onrender.com  ·  [invariants](https://paytm-wallet-cv48.onrender.com/admin/invariants) · [status](https://paytm-wallet-cv48.onrender.com/admin/status) · [metrics](https://paytm-wallet-cv48.onrender.com/metrics)
+- **Public logs:** [`https://paytm-wallet-cv48.onrender.com/debug/logs`](https://paytm-wallet-cv48.onrender.com/debug/logs) — or `curl -N https://paytm-wallet-cv48.onrender.com/debug/logs/stream` to watch them live
+- **One-command burst:** `./burst.sh https://paytm-wallet-cv48.onrender.com` — asserts all four invariants, exits non-zero on any failure
+- **API coverage:** `./apitest.sh https://paytm-wallet-cv48.onrender.com` — every endpoint, every status code
 - **Write-up:** [`docs/WRITEUP.md`](docs/WRITEUP.md)
 
 ---
